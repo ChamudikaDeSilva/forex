@@ -318,8 +318,13 @@ class MT5Feed:
     def candles(self, pair: str, timeframe: str) -> list[Candle]:
         return self.bridge.candles_by_pair_tf.get(f"{pair}:{timeframe}", [])
 
-    def bundle(self, pair: str, entry_timeframes: tuple[str, ...]) -> dict[str, list[Candle]]:
-        from .models import TREND_TIMEFRAMES
-        frames = (*entry_timeframes, *TREND_TIMEFRAMES)
+    def bundle(
+        self,
+        pair: str,
+        entry_timeframes: tuple[str, ...],
+        trend_timeframes: tuple[str, ...] | None = None,
+    ) -> dict[str, list[Candle]]:
+        from .feeds import _bundle_frames
+        frames = _bundle_frames(pair, entry_timeframes, trend_timeframes)
         return {frame: self.candles(pair, frame) for frame in frames}
 

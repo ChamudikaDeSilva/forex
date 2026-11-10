@@ -42,6 +42,7 @@ class AutoTrader:
         live: bool = False,
         verbose: bool = True,
         paper_trader: PaperTrader | None = None,
+        trend_timeframes: list[str] | tuple[str, ...] | None = None,
     ):
         self.broker = broker
         self.telegram_client = telegram_client
@@ -54,6 +55,7 @@ class AutoTrader:
         self.live = live
         self.verbose = verbose
         self.paper_trader = paper_trader
+        self.trend_timeframes = list(trend_timeframes) if trend_timeframes else ["H1", "H4", "D"]
         self.active_orders: dict[str, str] = {}  # signal_key -> broker_order_id
 
     def send_alert(self, text: str) -> None:
@@ -188,8 +190,18 @@ def run_autotrader(
     dry_run: bool = False,
     live: bool = False,
     paper_trader: PaperTrader | None = None,
+    intraday_trend: bool = False,
+    trend_timeframes: list[str] | tuple[str, ...] | None = None,
 ) -> int:
     """Main execution loop for scanning and trading."""
+    trend_frames: tuple[str, ...]
+    if trend_timeframes:
+        trend_frames = tuple(trend_timeframes)
+    elif intraday_trend:
+        trend_frames = ("H1", "H4")
+    else:
+        trend_frames = ("H1", "H4", "D")
+
     state = State(Path(state_path))
     trader = AutoTrader(
         broker=broker,
@@ -201,6 +213,7 @@ def run_autotrader(
         timeframes=timeframes,
         live=live,
         paper_trader=paper_trader,
+        trend_timeframes=trend_frames,
     )
 
     controller: TelegramController | None = None
@@ -214,13 +227,18 @@ def run_autotrader(
         trader.send_alert(
             f"🚀 <b>Forex SMC Auto-Trader Started</b>\n"
             f"• <b>Pairs:</b> {', '.join(pairs)}\n"
+            f"• <b>Timeframes:</b> {', '.join(timeframes)}\n"
+            f"• <b>Trend Filter:</b> {', '.join(trend_frames)}\n"
             f"• <b>Risk:</b> {risk_pct:.2f}%\n"
             f"• <b>Mode:</b> {'Dry Run (Simulated)' if dry_run else ('LIVE' if live else 'Practice')}\n"
             f"Send /help to view controls."
         )
 
     print(f"AutoTrader active. Monitoring {', '.join(pairs)} on {', '.join(timeframes)}.")
+    print(f"Trend alignment filter: {', '.join(trend_frames)}.")
     print("Press Ctrl+C to stop.")
+
+    warmed_up: dict[str, bool] = {}
 
     try:
         while True:
@@ -237,23 +255,33 @@ def run_autotrader(
                         stop_buffer=gold_buffer if gold else fx_buffer,
                         min_gap=gold_gap if gold else fx_gap,
                     )
-                    bundle = feed.bundle(pair, tuple(timeframes))
-                    bias = AlignedBias(bundle, swing_window)
+                    bundle = feed.bundle(pair, tuple(timeframes), trend_timeframes=trend_frames)
+                    bias = AlignedBias(bundle, swing_window, trend_timeframes=trend_frames)
 
                     for tf in timeframes:
                         candles = bundle[tf]
                         if not candles:
                             continue
                         latest = candles[-1].time
-                        checkpoint = state.last(f"{pair}:{tf}")
+                        cur_bias = bias(latest)
+                        bias_info = " ".join(f"{k}={v}" for k, v in bias.values_at(latest).items())
+
+                        stream_key = f"{pair}:{tf}"
+                        if stream_key not in warmed_up:
+                            warmed_up[stream_key] = True
+                            print(f"[{pair}] {tf} Active | Trend: {cur_bias.upper()} ({bias_info}) | Watching close: {latest.strftime('%H:%M:%S UTC')}")
+
+                        checkpoint = state.last(stream_key)
                         if checkpoint is not None and latest <= checkpoint:
                             continue
 
                         events = scan(candles, cfg, tf, bias)
                         now = datetime.now(timezone.utc)
                         if checkpoint is None:
-                            print(f"Warmed up {pair} {tf} through {latest.isoformat()}")
+                            # Initial stream warmup: mark current latest candle so only new closed bars trade
+                            pass
                         else:
+                            print(f"[{pair}] {tf} Bar closed @ {latest.strftime('%H:%M:%S UTC')} | Bias: {cur_bias.upper()} | Scanning...")
                             fresh = now - 2 * duration(tf)
                             for event in events:
                                 if event.time > checkpoint and event.time >= fresh:
@@ -263,7 +291,20 @@ def run_autotrader(
                             last_bar = candles[-1]
                             resolved = trader.paper_trader.on_candle(pair, last_bar.high, last_bar.low, last_bar.time)
                             for ev in resolved:
-                                if ev.get("type") == "CLOSED":
+                                if ev.get("type") == "FILLED":
+                                    pos = ev["position"]
+                                    fill_msg = (
+                                        f"📬 <b>SMC PAPER ORDER FILLED: {pos.pair} ({pos.timeframe})</b>\n"
+                                        f"━━━━━━━━━━━━━━━━━━\n"
+                                        f"• <b>Side:</b> {pos.side.upper()}\n"
+                                        f"• <b>Fill Price:</b> <code>{format_price(pos.pair, pos.entry)}</code>\n"
+                                        f"• <b>Target:</b> <code>{format_price(pos.pair, pos.target)}</code>\n"
+                                        f"• <b>Stop:</b> <code>{format_price(pos.pair, pos.stop)}</code>\n"
+                                        f"Position is now OPEN and actively tracking TP/SL."
+                                    )
+                                    trader.send_alert(fill_msg)
+                                    print(f"[{pos.pair}] {pos.timeframe} PAPER ORDER FILLED @ {format_price(pos.pair, pos.entry)}")
+                                elif ev.get("type") == "CLOSED":
                                     pos = ev["position"]
                                     res = ev["result"]
                                     icon = "🎯" if res == "WIN" else "🛑"

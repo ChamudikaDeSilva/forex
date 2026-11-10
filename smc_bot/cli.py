@@ -187,6 +187,15 @@ def main(argv: list[str] | None = None) -> int:
     autotrade_parser.add_argument("--telegram-chat-id", type=str, default="", help="Authorized Telegram chat ID")
     autotrade_parser.add_argument("--live", action="store_true", help="Trade on live broker account instead of practice")
     autotrade_parser.add_argument("--dry-run", action="store_true", help="Simulate orders and calculations without sending to broker")
+    autotrade_parser.add_argument("--intraday-trend", action="store_true", help="Use H1+H4 trend alignment (ignores Daily) for active intraday trading")
+    autotrade_parser.add_argument(
+        "--trend-tf", "--trend-timeframes",
+        dest="trend_timeframes",
+        nargs="+",
+        choices=("M15", "H1", "H4", "D"),
+        default=None,
+        help="Higher timeframes used for directional trend bias (e.g. --trend-tf M15 H1 or --trend-tf M15)",
+    )
     autotrade_parser.add_argument("--state", type=Path, default=Path("autotrade_state.json"))
     autotrade_parser.add_argument("--count", type=int, default=300, help="Candles per timeframe (30–5000)")
     autotrade_parser.add_argument("--interval", type=float, default=30, help="Poll interval in seconds (at least 10)")
@@ -244,6 +253,17 @@ def main(argv: list[str] | None = None) -> int:
             tg_chat_id = (args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
             tg_client = TelegramClient(tg_token) if tg_token else None
 
+            sweep_bars = args.sweep_bars
+            entry_bars = args.entry_bars
+            fx_gap = args.fx_gap
+            if "M1" in args.timeframes:
+                if args.sweep_bars == 12:
+                    sweep_bars = 24
+                if args.entry_bars == 12:
+                    entry_bars = 24
+                if args.fx_gap == 0.00005:
+                    fx_gap = 0.00002
+
             return run_autotrader(
                 broker=broker,
                 feed=feed,
@@ -256,16 +276,18 @@ def main(argv: list[str] | None = None) -> int:
                 interval=args.interval,
                 swing_window=args.swing_window,
                 reward_risk=args.rr,
-                sweep_bars=args.sweep_bars,
-                entry_bars=args.entry_bars,
+                sweep_bars=sweep_bars,
+                entry_bars=entry_bars,
                 fx_buffer=args.fx_buffer,
                 gold_buffer=args.gold_buffer,
-                fx_gap=args.fx_gap,
+                fx_gap=fx_gap,
                 gold_gap=args.gold_gap,
                 count=args.count,
                 dry_run=args.dry_run,
                 live=args.live,
                 paper_trader=paper_trader,
+                intraday_trend=args.intraday_trend,
+                trend_timeframes=args.trend_timeframes,
             )
         return watch(args)
     except KeyboardInterrupt:

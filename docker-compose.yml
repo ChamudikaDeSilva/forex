@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  smc-bot:
+    build: .
+    container_name: smc_forex_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./autotrade_state.json:/app/autotrade_state.json
+      - ./paper_trades.json:/app/paper_trades.json
+

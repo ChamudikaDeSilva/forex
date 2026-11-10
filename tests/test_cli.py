@@ -187,6 +187,39 @@ class AutotradeCliTests(unittest.TestCase):
             self.assertTrue(kwargs["dry_run"])
             self.assertEqual(kwargs["telegram_chat_id"], "chat456")
 
+    @patch("smc_bot.cli.run_autotrader")
+    def test_autotrade_intraday_trend_and_m1_tuning(self, mock_run):
+        mock_run.return_value = 0
+        cli.main([
+            "autotrade",
+            "--broker", "paper",
+            "--feed", "yahoo",
+            "--timeframes", "M1", "M5",
+            "--intraday-trend",
+            "--state", str(self.state_path),
+        ])
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        self.assertTrue(kwargs["intraday_trend"])
+        self.assertEqual(kwargs["sweep_bars"], 24)
+        self.assertEqual(kwargs["entry_bars"], 24)
+        self.assertEqual(kwargs["fx_gap"], 0.00002)
+
+    @patch("smc_bot.cli.run_autotrader")
+    def test_autotrade_custom_trend_tf(self, mock_run):
+        mock_run.return_value = 0
+        cli.main([
+            "autotrade",
+            "--broker", "paper",
+            "--feed", "yahoo",
+            "--timeframes", "M1", "M5",
+            "--trend-tf", "M15", "H1",
+            "--state", str(self.state_path),
+        ])
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        self.assertEqual(kwargs["trend_timeframes"], ["M15", "H1"])
+
     def test_load_dotenv(self):
         env_file = Path(self.directory.name) / ".env"
         env_file.write_text("TEST_CUSTOM_KEY='hello_test'\n# comment\nANOTHER_KEY=\"1234\"\n", encoding="utf-8")

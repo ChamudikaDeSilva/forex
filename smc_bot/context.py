@@ -9,8 +9,14 @@ from .strategy import structure_bias
 
 
 class AlignedBias:
-    def __init__(self, bundle: dict[str, list[Candle]], window: int = 2):
-        self.histories = {tf: bundle[tf] for tf in TREND_TIMEFRAMES}
+    def __init__(
+        self,
+        bundle: dict[str, list[Candle]],
+        window: int = 2,
+        trend_timeframes: tuple[str, ...] = TREND_TIMEFRAMES,
+    ):
+        self.trend_timeframes = trend_timeframes
+        self.histories = {tf: bundle[tf] for tf in self.trend_timeframes}
         self.times = {tf: [c.time for c in bars] for tf, bars in self.histories.items()}
         self.window = window
         for tf, times in self.times.items():
@@ -23,7 +29,7 @@ class AlignedBias:
 
     def values_at(self, time: datetime) -> dict[str, str]:
         values = {}
-        for tf in TREND_TIMEFRAMES:
+        for tf in self.trend_timeframes:
             count = bisect_right(self.times[tf], time)
             if not count or time - self.times[tf][count - 1] > 3 * duration(tf):
                 values[tf] = "neutral"

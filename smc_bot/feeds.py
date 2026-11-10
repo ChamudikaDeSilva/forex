@@ -28,12 +28,17 @@ class FeedError(RuntimeError):
     """A safe provider error message that does not expose credentials."""
 
 
-def _bundle_frames(pair: str, entry_timeframes: tuple[str, ...]) -> dict[str, None]:
+def _bundle_frames(
+    pair: str,
+    entry_timeframes: tuple[str, ...],
+    trend_timeframes: tuple[str, ...] | None = None,
+) -> dict[str, None]:
     if pair not in PAIRS:
         raise ValueError(f"Unsupported pair {pair!r}; choose from {', '.join(PAIRS)}")
     if not entry_timeframes or any(frame not in ENTRY_TIMEFRAMES for frame in entry_timeframes):
-        raise ValueError("Entry timeframes must contain M5 and/or M15")
-    return dict.fromkeys((*entry_timeframes, *TREND_TIMEFRAMES))
+        raise ValueError("Entry timeframes must contain M1, M5 and/or M15")
+    trends = trend_timeframes if trend_timeframes is not None else TREND_TIMEFRAMES
+    return dict.fromkeys((*entry_timeframes, *trends))
 
 
 class OandaFeed:
@@ -134,8 +139,13 @@ class OandaFeed:
             raise FeedError(f"OANDA {pair}/{timeframe}: no completed candles returned")
         return candles
 
-    def bundle(self, pair: str, entry_timeframes: tuple[str, ...]) -> dict[str, list[Candle]]:
-        return {frame: self.candles(pair, frame) for frame in _bundle_frames(pair, entry_timeframes)}
+    def bundle(
+        self,
+        pair: str,
+        entry_timeframes: tuple[str, ...],
+        trend_timeframes: tuple[str, ...] | None = None,
+    ) -> dict[str, list[Candle]]:
+        return {frame: self.candles(pair, frame) for frame in _bundle_frames(pair, entry_timeframes, trend_timeframes)}
 
 
 class YahooFeed:
@@ -157,7 +167,7 @@ class YahooFeed:
         "XAU_USD": "GC=F",
     }
     TIMEFRAME_MAP = {
-        "M1": ("1m", "1d"),
+        "M1": ("1m", "5d"),
         "M5": ("5m", "5d"),
         "M15": ("15m", "5d"),
         "H1": ("60m", "1mo"),
@@ -268,8 +278,8 @@ class YahooFeed:
         cache_key = f"{pair}:{timeframe}"
         now_mono = time.monotonic()
         # Cache Higher Timeframes to drastically reduce HTTP traffic:
-        # D: 1800s (30m), H1: 300s (5m), H4: 300s (5m)
-        ttl = {"D": 1800, "H1": 300, "H4": 300}.get(timeframe, 0)
+        # D: 1800s (30m), H1: 300s (5m), H4: 300s (5m), M15: 30s
+        ttl = {"D": 1800, "H1": 300, "H4": 300, "M15": 30}.get(timeframe, 0)
         if ttl > 0 and cache_key in self._cache:
             entry_time, cached = self._cache[cache_key]
             if (now_mono - entry_time) < ttl:
@@ -357,8 +367,13 @@ class YahooFeed:
             )
         return h4_candles
 
-    def bundle(self, pair: str, entry_timeframes: tuple[str, ...]) -> dict[str, list[Candle]]:
-        return {frame: self.candles(pair, frame) for frame in _bundle_frames(pair, entry_timeframes)}
+    def bundle(
+        self,
+        pair: str,
+        entry_timeframes: tuple[str, ...],
+        trend_timeframes: tuple[str, ...] | None = None,
+    ) -> dict[str, list[Candle]]:
+        return {frame: self.candles(pair, frame) for frame in _bundle_frames(pair, entry_timeframes, trend_timeframes)}
 
 
 

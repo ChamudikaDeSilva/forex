@@ -30,7 +30,7 @@ class TelegramClient:
     BASE_URL = "https://api.telegram.org"
 
     def __init__(self, token: str | None = None):
-        raw_token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        raw_token = os.environ.get("TELEGRAM_BOT_TOKEN", "") if token is None else token
         if not isinstance(raw_token, str) or not raw_token.strip():
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
         self._token = raw_token.strip()
@@ -232,6 +232,7 @@ class TelegramController:
         risk = getattr(self.autotrader, "risk_pct", 1.0)
         pairs = getattr(self.autotrader, "pairs", ["EUR_USD", "GBP_USD", "XAU_USD"])
         tfs = getattr(self.autotrader, "timeframes", ["M5", "M15"])
+        trend_tfs = getattr(self.autotrader, "trend_timeframes", ["H1", "H4", "D"])
 
         msg = (
             f"🤖 <b>Bot Status</b>\n"
@@ -240,6 +241,7 @@ class TelegramController:
             f"• <b>Risk per trade:</b> {risk:.2f}%\n"
             f"• <b>Pairs:</b> {', '.join(pairs)}\n"
             f"• <b>Timeframes:</b> {', '.join(tfs)}\n"
+            f"• <b>Trend Filter:</b> {', '.join(trend_tfs)}\n"
             f"• <b>Live Mode:</b> {'Yes (Real Funds)' if getattr(self.autotrader, 'live', False) else 'No (Practice)'}\n"
         )
         self.client.send_message(chat_id, msg)
