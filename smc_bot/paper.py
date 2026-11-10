@@ -38,6 +38,7 @@ class PaperPosition:
     realized_pnl: float = 0.0
     close_price: float | None = None
     close_reason: str = ""
+    classification: str = "PRO_TREND"
 
 
 class PaperTrader:
@@ -118,8 +119,9 @@ class PaperTrader:
     def on_setup(self, signal: Signal, pair: str, timeframe: str) -> PaperPosition:
         """Place a virtual limit order when SMC setup appears."""
         pos_id = f"paper_{pair}_{timeframe}_{int(datetime.now(timezone.utc).timestamp())}"
-        lots = self.calculate_units(pair, signal.side, signal.entry, signal.stop, self.risk_pct)
-        risk_usd = self.balance * (self.risk_pct / 100.0)
+        eff_risk_pct = self.risk_pct * getattr(signal, "risk_factor", 1.0)
+        lots = self.calculate_units(pair, signal.side, signal.entry, signal.stop, eff_risk_pct)
+        risk_usd = self.balance * (eff_risk_pct / 100.0)
         rr = round(abs(signal.target - signal.entry) / abs(signal.entry - signal.stop), 2)
 
         pos = PaperPosition(
@@ -135,6 +137,7 @@ class PaperTrader:
             reward_risk=rr,
             status="PENDING",
             setup_time=signal.setup_time.isoformat(),
+            classification=getattr(signal, "classification", "PRO_TREND"),
         )
         self.positions.append(pos)
         self.save()

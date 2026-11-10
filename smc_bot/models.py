@@ -71,6 +71,9 @@ class Signal:
     gap_high: float
     expires: datetime
     reason: str
+    classification: str = "PRO_TREND"
+    risk_factor: float = 1.0
+    poi_target: float | None = None
 
     def key(self, pair: str, timeframe: str) -> str:
         return f"{pair}:{timeframe}:{self.setup_time.isoformat()}:{self.side}:{self.kind}"

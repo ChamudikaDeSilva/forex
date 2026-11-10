@@ -187,6 +187,12 @@ def main(argv: list[str] | None = None) -> int:
     autotrade_parser.add_argument("--telegram-chat-id", type=str, default="", help="Authorized Telegram chat ID")
     autotrade_parser.add_argument("--live", action="store_true", help="Trade on live broker account instead of practice")
     autotrade_parser.add_argument("--dry-run", action="store_true", help="Simulate orders and calculations without sending to broker")
+    autotrade_parser.add_argument(
+        "--engine",
+        choices=("hierarchical", "aligned", "standalone"),
+        default="hierarchical",
+        help="Strategy engine: hierarchical (top-down expansion & retracement), aligned (unanimous filter), or standalone (blueprint on each timeframe)",
+    )
     autotrade_parser.add_argument("--intraday-trend", action="store_true", help="Use H1+H4 trend alignment (ignores Daily) for active intraday trading")
     autotrade_parser.add_argument(
         "--trend-tf", "--trend-timeframes",
@@ -288,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
                 paper_trader=paper_trader,
                 intraday_trend=args.intraday_trend,
                 trend_timeframes=args.trend_timeframes,
+                engine=args.engine,
             )
         return watch(args)
     except KeyboardInterrupt:

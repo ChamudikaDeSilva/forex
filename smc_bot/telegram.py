@@ -233,15 +233,17 @@ class TelegramController:
         pairs = getattr(self.autotrader, "pairs", ["EUR_USD", "GBP_USD", "XAU_USD"])
         tfs = getattr(self.autotrader, "timeframes", ["M5", "M15"])
         trend_tfs = getattr(self.autotrader, "trend_timeframes", ["H1", "H4", "D"])
+        engine = getattr(self.autotrader, "engine", "hierarchical").replace("_", " ").title()
 
         msg = (
             f"🤖 <b>Bot Status</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
+            f"• <b>Engine:</b> {engine} (Expansion & Retracement)\n"
             f"• <b>Execution:</b> {mode}\n"
             f"• <b>Risk per trade:</b> {risk:.2f}%\n"
             f"• <b>Pairs:</b> {', '.join(pairs)}\n"
             f"• <b>Timeframes:</b> {', '.join(tfs)}\n"
-            f"• <b>Trend Filter:</b> {', '.join(trend_tfs)}\n"
+            f"• <b>Context Timeframes:</b> {', '.join(trend_tfs) if trend_tfs else 'Standalone'}\n"
             f"• <b>Live Mode:</b> {'Yes (Real Funds)' if getattr(self.autotrader, 'live', False) else 'No (Practice)'}\n"
         )
         self.client.send_message(chat_id, msg)

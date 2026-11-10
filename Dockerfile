@@ -8,5 +8,5 @@ COPY smc_bot/ /app/smc_bot/
 ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["python3", "-m", "smc_bot"]
-CMD ["autotrade", "--broker", "paper", "--feed", "yahoo", "--timeframes", "M1", "M5", "--trend-tf", "M15", "--interval", "15"]
+CMD ["autotrade", "--broker", "paper", "--feed", "yahoo", "--timeframes", "M1", "M5", "--engine", "hierarchical", "--interval", "15"]
 

@@ -220,6 +220,21 @@ class AutotradeCliTests(unittest.TestCase):
         _, kwargs = mock_run.call_args
         self.assertEqual(kwargs["trend_timeframes"], ["M15", "H1"])
 
+    @patch("smc_bot.cli.run_autotrader")
+    def test_autotrade_engine_flag(self, mock_run):
+        mock_run.return_value = 0
+        cli.main([
+            "autotrade",
+            "--broker", "paper",
+            "--feed", "yahoo",
+            "--timeframes", "M1", "M5",
+            "--engine", "hierarchical",
+            "--state", str(self.state_path),
+        ])
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        self.assertEqual(kwargs["engine"], "hierarchical")
+
     def test_load_dotenv(self):
         env_file = Path(self.directory.name) / ".env"
         env_file.write_text("TEST_CUSTOM_KEY='hello_test'\n# comment\nANOTHER_KEY=\"1234\"\n", encoding="utf-8")

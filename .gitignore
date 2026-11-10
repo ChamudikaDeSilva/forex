@@ -5,3 +5,6 @@ __pycache__/
 data/
 state.json
 *.log
+autotrade_state.json
+autotrade_state.json
+paper_trades.json
