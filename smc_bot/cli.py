@@ -62,10 +62,20 @@ def status(message: str, json_output: bool = False) -> None:
 
 def configuration(args: argparse.Namespace, pair: str) -> Config:
     gold = pair == "XAU_USD"
-    return config_for(pair, swing_window=args.swing_window, reward_risk=args.rr,
-                      sweep_timeout=args.sweep_bars, entry_timeout=args.entry_bars,
-                      stop_buffer=args.gold_buffer if gold else args.fx_buffer,
-                      min_gap=args.gold_gap if gold else args.fx_gap)
+    quality = getattr(args, "quality", "high")
+    swing_window = args.swing_window
+    if quality == "high" and swing_window == 2:
+        swing_window = 3
+    return config_for(
+        pair,
+        quality=quality,
+        swing_window=swing_window,
+        reward_risk=args.rr,
+        sweep_timeout=args.sweep_bars,
+        entry_timeout=args.entry_bars,
+        stop_buffer=args.gold_buffer if gold else args.fx_buffer,
+        min_gap=args.gold_gap if gold else args.fx_gap,
+    )
 
 
 def replay(args: argparse.Namespace) -> int:
@@ -152,6 +162,12 @@ def add_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gold-buffer", type=float, default=0.1, help="Gold stop buffer in dollars")
     parser.add_argument("--fx-gap", type=float, default=0.00005, help="Minimum EUR/GBP FVG width")
     parser.add_argument("--gold-gap", type=float, default=0.05, help="Minimum gold FVG width in dollars")
+    parser.add_argument(
+        "--quality",
+        choices=("high", "standard"),
+        default="high",
+        help="Quality filter: high (Premium/Discount gate, 3-bar swing window, healthy displacement) or standard",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -259,9 +275,26 @@ def main(argv: list[str] | None = None) -> int:
             tg_chat_id = (args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
             tg_client = TelegramClient(tg_token) if tg_token else None
 
+            quality = getattr(args, "quality", "high")
             sweep_bars = args.sweep_bars
             entry_bars = args.entry_bars
             fx_gap = args.fx_gap
+            gold_gap = args.gold_gap
+            fx_buffer = args.fx_buffer
+            gold_buffer = args.gold_buffer
+            swing_window = args.swing_window
+
+            if quality == "high":
+                if swing_window == 2:
+                    swing_window = 3
+                if fx_gap == 0.00005:
+                    fx_gap = 0.00008
+                if gold_gap == 0.05:
+                    gold_gap = 0.15
+                if fx_buffer == 0.0001:
+                    fx_buffer = 0.00015
+                if gold_buffer == 0.1:
+                    gold_buffer = 0.15
             if "M1" in args.timeframes:
                 if args.sweep_bars == 12:
                     sweep_bars = 24
@@ -280,14 +313,14 @@ def main(argv: list[str] | None = None) -> int:
                 state_path=str(args.state),
                 risk_pct=args.risk_pct,
                 interval=args.interval,
-                swing_window=args.swing_window,
+                swing_window=swing_window,
                 reward_risk=args.rr,
                 sweep_bars=sweep_bars,
                 entry_bars=entry_bars,
-                fx_buffer=args.fx_buffer,
-                gold_buffer=args.gold_buffer,
+                fx_buffer=fx_buffer,
+                gold_buffer=gold_buffer,
                 fx_gap=fx_gap,
-                gold_gap=args.gold_gap,
+                gold_gap=gold_gap,
                 count=args.count,
                 dry_run=args.dry_run,
                 live=args.live,
@@ -295,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
                 intraday_trend=args.intraday_trend,
                 trend_timeframes=args.trend_timeframes,
                 engine=args.engine,
+                quality=quality,
             )
         return watch(args)
     except KeyboardInterrupt:

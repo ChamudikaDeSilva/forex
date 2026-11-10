@@ -78,6 +78,14 @@ class PaperTrader:
         except Exception:
             pass
 
+    def reset(self, new_balance: float | None = None) -> None:
+        """Reset paper trading state to clean starting balance."""
+        if new_balance is not None:
+            self.initial_balance = new_balance
+        self.balance = self.initial_balance
+        self.positions = []
+        self.save()
+
     def get_account_summary(self) -> dict[str, Any]:
         """Conform to Broker summary interface."""
         unrealized = 0.0

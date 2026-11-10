@@ -100,14 +100,20 @@ def scan(
     plan_index = -1
     events: list[Signal] = []
 
-    def get_regime_info(t: datetime) -> tuple[str, str, float, float | None]:
+    def get_regime_info(t: datetime) -> tuple[str, str, float, float | None, float | None]:
         val = bias_at(t)
         if hasattr(val, "active_side"):
-            return val.active_side, getattr(val, "classification", "PRO_TREND"), getattr(val, "risk_factor", 1.0), getattr(val, "poi_target", None)
+            return (
+                val.active_side,
+                getattr(val, "classification", "PRO_TREND"),
+                getattr(val, "risk_factor", 1.0),
+                getattr(val, "poi_target", None),
+                getattr(val, "equilibrium", None),
+            )
         if isinstance(val, str):
             side = "buy" if val == "bullish" else ("sell" if val == "bearish" else ("both" if val == "both" else "none"))
-            return side, "PRO_TREND", 1.0, None
-        return "none", "NONE", 0.0, None
+            return side, "PRO_TREND", 1.0, None, None
+        return "none", "NONE", 0.0, None, None
 
     def matches(side: str, active: str) -> bool:
         return active in (side, "both")
@@ -122,7 +128,7 @@ def scan(
             if low is not None:
                 lows.append(low)
 
-        active_side, classification, risk_factor, poi_target = get_regime_info(candle.time)
+        active_side, classification, risk_factor, poi_target, equilibrium = get_regime_info(candle.time)
         if plan is not None:
             buying = plan.side == "buy"
             stop_touched = candle.low <= plan.stop if buying else candle.high >= plan.stop
@@ -163,6 +169,18 @@ def scan(
                 gap_high = candle.low if buying else candles[middle - 1].low
                 if gap_high - gap_low >= config.min_gap:
                     entry = (gap_low + gap_high) / 2
+
+                    # Premium vs. Discount Gate:
+                    # In High-Quality mode, reject BUY if entry is in Premium (> equilibrium),
+                    # and reject SELL if entry is in Discount (< equilibrium).
+                    if config.quality == "high" and equilibrium is not None:
+                        if buying and entry > equilibrium:
+                            candidate = None
+                            continue
+                        elif not buying and entry < equilibrium:
+                            candidate = None
+                            continue
+
                     risk = entry - candidate.stop if buying else candidate.stop - entry
                     if risk > 0:
                         target = entry + config.reward_risk * risk if buying else entry - config.reward_risk * risk
@@ -203,11 +221,17 @@ def scan(
         high, low = highs[-1], lows[-1]
         if (matches("buy", active_side) and ("buy", low.index) not in consumed
                 and candle.low < low.price < candle.close < high.price):
-            consumed.add(("buy", low.index))
-            candidate = _Candidate("buy", index, high.price, candle.low - config.stop_buffer)
+            if config.quality == "high" and equilibrium is not None and candle.close > equilibrium:
+                pass  # Discard BUY accumulation in Premium
+            else:
+                consumed.add(("buy", low.index))
+                candidate = _Candidate("buy", index, high.price, candle.low - config.stop_buffer)
         elif (matches("sell", active_side) and ("sell", high.index) not in consumed
               and candle.high > high.price > candle.close > low.price):
-            consumed.add(("sell", high.index))
-            candidate = _Candidate("sell", index, low.price, candle.high + config.stop_buffer)
+            if config.quality == "high" and equilibrium is not None and candle.close < equilibrium:
+                pass  # Discard SELL distribution in Discount
+            else:
+                consumed.add(("sell", high.index))
+                candidate = _Candidate("sell", index, low.price, candle.high + config.stop_buffer)
 
     return events

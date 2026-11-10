@@ -45,6 +45,7 @@ class AutoTrader:
         paper_trader: PaperTrader | None = None,
         trend_timeframes: list[str] | tuple[str, ...] | None = None,
         engine: str = "hierarchical",
+        quality: str = "high",
     ):
         self.broker = broker
         self.telegram_client = telegram_client
@@ -59,6 +60,7 @@ class AutoTrader:
         self.paper_trader = paper_trader
         self.trend_timeframes = list(trend_timeframes) if trend_timeframes else ["H1", "H4", "D"]
         self.engine = engine
+        self.quality = quality
         self.active_orders: dict[str, str] = {}  # signal_key -> broker_order_id
 
     def send_alert(self, text: str) -> None:
@@ -207,6 +209,7 @@ def run_autotrader(
     intraday_trend: bool = False,
     trend_timeframes: list[str] | tuple[str, ...] | None = None,
     engine: str = "hierarchical",
+    quality: str = "high",
 ) -> int:
     """Main execution loop for scanning and trading."""
     trend_frames: tuple[str, ...]
@@ -234,6 +237,7 @@ def run_autotrader(
         paper_trader=paper_trader,
         trend_timeframes=trend_frames,
         engine=engine,
+        quality=quality,
     )
 
     controller: TelegramController | None = None
@@ -247,6 +251,7 @@ def run_autotrader(
         trader.send_alert(
             f"🚀 <b>Forex SMC Auto-Trader Started</b>\n"
             f"• <b>Engine:</b> {engine.replace('_', ' ').title()}\n"
+            f"• <b>Quality Filter:</b> {'💎 High Conviction' if quality == 'high' else 'Standard'}\n"
             f"• <b>Pairs:</b> {', '.join(pairs)}\n"
             f"• <b>Timeframes:</b> {', '.join(timeframes)}\n"
             f"• <b>Trend Filter:</b> {', '.join(trend_frames) if trend_frames else 'Standalone Blueprint'}\n"
@@ -255,7 +260,7 @@ def run_autotrader(
             f"Send /help to view controls."
         )
 
-    print(f"AutoTrader active. Monitoring {', '.join(pairs)} on {', '.join(timeframes)}.")
+    print(f"AutoTrader active. Monitoring {', '.join(pairs)} on {', '.join(timeframes)} [Quality: {quality.upper()}].")
     print(f"SMC Engine: {engine.upper()} | Context: {', '.join(trend_frames) if trend_frames else 'Standalone'}")
     print("Press Ctrl+C to stop.")
 
@@ -269,6 +274,7 @@ def run_autotrader(
                     gold = pair == "XAU_USD"
                     cfg = config_for(
                         pair,
+                        quality=quality,
                         swing_window=swing_window,
                         reward_risk=reward_risk,
                         sweep_timeout=sweep_bars,

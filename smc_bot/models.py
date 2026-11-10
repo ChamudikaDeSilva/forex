@@ -38,6 +38,7 @@ class Config:
     min_gap: float = 0.00005
     sweep_timeout: int = 12
     entry_timeout: int = 12
+    quality: str = "standard"
 
     def __post_init__(self) -> None:
         if self.swing_window < 1 or self.sweep_timeout < 1 or self.entry_timeout < 1:
@@ -48,12 +49,29 @@ class Config:
             raise ValueError("Stop buffer must be positive and finite")
         if not isfinite(self.min_gap) or self.min_gap <= 0:
             raise ValueError("Minimum FVG size must be positive and finite")
+        if self.quality not in ("standard", "high"):
+            raise ValueError("Quality must be 'standard' or 'high'")
 
 
-def config_for(pair: str, **overrides: object) -> Config:
-    # Gold uses absolute dollar distances: $0.10 buffer and $0.05 minimum gap.
-    # These are configurable price distances, not universal broker pip sizes.
-    values = {"stop_buffer": 0.1, "min_gap": 0.05} if pair == "XAU_USD" else {}
+def config_for(pair: str, quality: str = "standard", **overrides: object) -> Config:
+    # Gold uses absolute dollar distances.
+    # When quality is high, enforce 3-bar swing window and healthy institutional displacement.
+    # When quality is standard, use classic parameters. Explicit overrides take precedence.
+    gold = pair == "XAU_USD"
+    if overrides.get("quality") == "high" or (quality == "high" and "quality" not in overrides):
+        values: dict[str, object] = {
+            "swing_window": 3,
+            "stop_buffer": 0.15 if gold else 0.00015,
+            "min_gap": 0.15 if gold else 0.00008,
+            "quality": "high",
+        }
+    else:
+        values = {
+            "swing_window": 2,
+            "stop_buffer": 0.1 if gold else 0.0001,
+            "min_gap": 0.05 if gold else 0.00005,
+            "quality": "standard",
+        }
     values.update(overrides)
     return Config(**values)
 

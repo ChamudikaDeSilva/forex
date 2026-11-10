@@ -224,6 +224,58 @@ class ScanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 structure_bias(invalid, window=1)
 
+    def test_premium_discount_gate_blocks_buy_in_premium(self):
+        from smc_bot.regime import MarketRegime
+        candles = long_pattern()
+        regime = MarketRegime(
+            time=candles[-1].time,
+            macro_bias="bullish",
+            intermediate_bias="bullish",
+            phase="EXPANSION",
+            active_side="buy",
+            classification="PRO_TREND",
+            risk_factor=1.0,
+            equilibrium=90.0,
+        )
+        high_cfg = Config(swing_window=1, stop_buffer=0.1, min_gap=0.05, sweep_timeout=12, entry_timeout=3, quality="high")
+        events = scan(candles, high_cfg, "M5", lambda _: regime)
+        self.assertEqual(events, [])
+
+    def test_premium_discount_gate_allows_buy_in_discount(self):
+        from smc_bot.regime import MarketRegime
+        candles = long_pattern()
+        regime = MarketRegime(
+            time=candles[-1].time,
+            macro_bias="bullish",
+            intermediate_bias="bullish",
+            phase="EXPANSION",
+            active_side="buy",
+            classification="PRO_TREND",
+            risk_factor=1.0,
+            equilibrium=110.0,
+        )
+        high_cfg = Config(swing_window=1, stop_buffer=0.1, min_gap=0.05, sweep_timeout=12, entry_timeout=3, quality="high")
+        events = scan(candles, high_cfg, "M5", lambda _: regime)
+        self.assertEqual([e.kind for e in events], ["setup"])
+        self.assertEqual(events[0].side, "buy")
+
+    def test_standard_quality_ignores_premium_discount_gate(self):
+        from smc_bot.regime import MarketRegime
+        candles = long_pattern()
+        regime = MarketRegime(
+            time=candles[-1].time,
+            macro_bias="bullish",
+            intermediate_bias="bullish",
+            phase="EXPANSION",
+            active_side="buy",
+            classification="PRO_TREND",
+            risk_factor=1.0,
+            equilibrium=90.0,
+        )
+        std_cfg = Config(swing_window=1, stop_buffer=0.1, min_gap=0.05, sweep_timeout=12, entry_timeout=3, quality="standard")
+        events = scan(candles, std_cfg, "M5", lambda _: regime)
+        self.assertEqual([e.kind for e in events], ["setup"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -172,6 +172,8 @@ class TelegramController:
                 self._cmd_risk(chat_id, args)
             elif cmd == "/closeall":
                 self._cmd_closeall(chat_id)
+            elif cmd == "/reset":
+                self._cmd_reset(chat_id, args)
             else:
                 self.client.send_message(
                     chat_id,
@@ -191,6 +193,7 @@ class TelegramController:
             "⏸️ /pause - Pause automated execution (alerts only)\n"
             "▶️ /resume - Resume automated execution\n"
             "⚙️ /risk &lt;pct&gt; - Update risk % per trade (e.g. <code>/risk 1.0</code>)\n"
+            "🔄 /reset [amount] - Reset paper trading balance & scorecard\n"
             "🚨 /closeall - Emergency kill-switch (cancel all orders & close trades)\n"
             "ℹ️ /help - Show this command menu"
         )
@@ -234,11 +237,14 @@ class TelegramController:
         tfs = getattr(self.autotrader, "timeframes", ["M5", "M15"])
         trend_tfs = getattr(self.autotrader, "trend_timeframes", ["H1", "H4", "D"])
         engine = getattr(self.autotrader, "engine", "hierarchical").replace("_", " ").title()
+        quality = getattr(self.autotrader, "quality", "high")
+        quality_str = "💎 High Conviction (Premium/Discount Gate)" if quality == "high" else "Standard"
 
         msg = (
             f"🤖 <b>Bot Status</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"• <b>Engine:</b> {engine} (Expansion & Retracement)\n"
+            f"• <b>Quality Filter:</b> {quality_str}\n"
             f"• <b>Execution:</b> {mode}\n"
             f"• <b>Risk per trade:</b> {risk:.2f}%\n"
             f"• <b>Pairs:</b> {', '.join(pairs)}\n"
@@ -356,5 +362,29 @@ class TelegramController:
         self.client.send_message(
             chat_id,
             f"✅ <b>Kill-switch completed:</b> {len(results)} actions taken (pending orders cancelled & positions closed).",
+        )
+
+    def _cmd_reset(self, chat_id: str | int, args: list[str]) -> None:
+        pt = getattr(self.autotrader, "paper_trader", None)
+        if not pt:
+            self.client.send_message(chat_id, "ℹ️ Paper trading not active in this session.")
+            return
+
+        new_bal = None
+        if args:
+            try:
+                new_bal = float(args[0])
+            except ValueError:
+                self.client.send_message(chat_id, "⚠️ Invalid balance amount. Usage: <code>/reset [amount]</code>")
+                return
+
+        pt.reset(new_bal)
+        self.client.send_message(
+            chat_id,
+            f"🔄 <b>Paper Trading Scorecard Reset</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"• <b>New Balance:</b> ${pt.balance:,.2f}\n"
+            f"• <b>Positions Cleared:</b> 0 open, 0 history\n"
+            f"Ready for clean tracking."
         )
 
