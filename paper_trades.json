@@ -1,5 +1,27 @@
 {
   "initial_balance": 10000.0,
-  "balance": 10000.0,
-  "positions": []
+  "balance": 9900.0,
+  "positions": [
+    {
+      "id": "paper_XAU_USD_M5_1794380750",
+      "pair": "XAU_USD",
+      "timeframe": "M5",
+      "side": "buy",
+      "entry": 4067.85009765625,
+      "stop": 4061.650048828125,
+      "target": 4080.2501953125,
+      "units": 0.16,
+      "risk_usd": 100.0,
+      "reward_risk": 2.0,
+      "status": "LOSS",
+      "setup_time": "2026-11-11T07:00:45+00:00",
+      "filled_time": "2026-11-11T07:01:08+00:00",
+      "closed_time": "2026-11-11T09:15:00+00:00",
+      "realized_r": -1.0,
+      "realized_pnl": -100.0,
+      "close_price": 4061.650048828125,
+      "close_reason": "Stop loss hit (-1.0R)",
+      "classification": "INTRADAY_SWING"
+    }
+  ]
 }

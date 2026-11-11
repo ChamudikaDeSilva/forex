@@ -208,6 +208,7 @@ class TelegramController:
         m = pt.get_metrics()
         ret_icon = "🟢" if m["return_pct"] >= 0 else "🔴"
         r_icon = "🟢" if m["total_r"] >= 0 else "🔴"
+        be_str = f" / {m['break_evens']} BE" if m.get("break_evens", 0) > 0 else ""
 
         msg = (
             "📊 <b>SMC Paper Trading Performance</b>\n"
@@ -215,7 +216,7 @@ class TelegramController:
             f"• <b>Starting Capital:</b> ${m['initial_balance']:,.2f}\n"
             f"• <b>Current Balance:</b> ${m['current_balance']:,.2f} ({ret_icon} {m['return_pct']:+.2f}%)\n"
             f"• <b>Net Realized P/L:</b> ${m['net_pnl']:+,.2f}\n"
-            f"• <b>Total Trades:</b> {m['total_trades']} ({m['wins']} Wins / {m['losses']} Losses)\n"
+            f"• <b>Total Trades:</b> {m['total_trades']} ({m['wins']} Wins / {m['losses']} Losses{be_str})\n"
             f"• <b>Win Rate:</b> <b>{m['win_rate']:.1f}%</b>\n"
             f"• <b>Profit Factor:</b> <b>{m['profit_factor']:.2f}</b>\n"
             f"• <b>Total Realized R:</b> {r_icon} <b>{m['total_r']:+.1f}R</b>\n"
@@ -245,6 +246,7 @@ class TelegramController:
             f"━━━━━━━━━━━━━━━━━━\n"
             f"• <b>Engine:</b> {engine} (Expansion & Retracement)\n"
             f"• <b>Quality Filter:</b> {quality_str}\n"
+            f"• <b>Protective Stops:</b> 🛡️ Auto Break-Even @ +1.0R\n"
             f"• <b>Execution:</b> {mode}\n"
             f"• <b>Risk per trade:</b> {risk:.2f}%\n"
             f"• <b>Pairs:</b> {', '.join(pairs)}\n"

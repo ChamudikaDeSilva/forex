@@ -30,7 +30,7 @@ class PaperPosition:
     units: float
     risk_usd: float
     reward_risk: float
-    status: str  # "PENDING", "OPEN", "WIN", "LOSS", "CANCELLED", "EXPIRED"
+    status: str  # "PENDING", "OPEN", "WIN", "LOSS", "CANCELLED", "EXPIRED", "BREAK_EVEN"
     setup_time: str
     filled_time: str | None = None
     closed_time: str | None = None
@@ -39,6 +39,12 @@ class PaperPosition:
     close_price: float | None = None
     close_reason: str = ""
     classification: str = "PRO_TREND"
+    initial_stop: float | None = None
+    is_break_even: bool = False
+
+    def __post_init__(self) -> None:
+        if self.initial_stop is None:
+            self.initial_stop = self.stop
 
 
 class PaperTrader:
@@ -124,8 +130,80 @@ class PaperTrader:
             lots = risk_usd / (100000.0 * distance)
         return max(0.01, round(lots, 2))
 
-    def on_setup(self, signal: Signal, pair: str, timeframe: str) -> PaperPosition:
+    def create_limit_order(
+        self,
+        pair: str,
+        side: str,
+        entry: float,
+        stop: float,
+        target: float,
+        units: float | None = None,
+        risk_pct: float = 1.0,
+        client_tag: str | None = None,
+    ) -> dict[str, Any]:
+        """Conform to Broker interface for limit order creation."""
+        order_id = f"paper_{pair}_{int(datetime.now(timezone.utc).timestamp())}"
+        return {
+            "orderCreateTransaction": {"id": order_id},
+            "lastTransactionID": order_id,
+        }
+
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
+        """Conform to Broker interface for cancelling a pending order."""
+        for p in self.positions:
+            if p.id == order_id and p.status == "PENDING":
+                p.status = "CANCELLED"
+                p.close_reason = "Order cancelled"
+                self.save()
+                break
+        return {"orderCancelTransaction": {"orderID": order_id}}
+
+    def get_open_trades(self) -> list[dict[str, Any]]:
+        """Conform to Broker interface for listing active trades."""
+        trades = []
+        for p in self.positions:
+            if p.status == "OPEN":
+                trades.append({
+                    "id": p.id,
+                    "instrument": p.pair,
+                    "currentUnits": str(p.units),
+                    "price": str(p.entry),
+                    "unrealizedPL": "0.0",
+                })
+        return trades
+
+    def get_pending_orders(self) -> list[dict[str, Any]]:
+        """Conform to Broker interface for listing pending orders."""
+        orders = []
+        for p in self.positions:
+            if p.status == "PENDING":
+                orders.append({
+                    "id": p.id,
+                    "instrument": p.pair,
+                    "units": str(p.units),
+                    "price": str(p.entry),
+                    "type": "LIMIT",
+                })
+        return orders
+
+    def close_trade(self, trade_id: str) -> dict[str, Any]:
+        """Conform to Broker interface for manually closing a trade."""
+        for p in self.positions:
+            if p.id == trade_id and p.status == "OPEN":
+                p.status = "CANCELLED"
+                p.closed_time = datetime.now(timezone.utc).isoformat()
+                p.close_reason = "Closed manually via /closeall"
+                self.save()
+                break
+        return {"orderCreateTransaction": {"id": trade_id}}
+
+    def on_setup(self, signal: Signal, pair: str, timeframe: str) -> PaperPosition | None:
         """Place a virtual limit order when SMC setup appears."""
+        # Only allow 1 active (PENDING or OPEN) position per pair & timeframe
+        for p in self.positions:
+            if p.pair == pair and p.timeframe == timeframe and p.status in ("PENDING", "OPEN"):
+                return None
+
         pos_id = f"paper_{pair}_{timeframe}_{int(datetime.now(timezone.utc).timestamp())}"
         eff_risk_pct = self.risk_pct * getattr(signal, "risk_factor", 1.0)
         lots = self.calculate_units(pair, signal.side, signal.entry, signal.stop, eff_risk_pct)
@@ -146,6 +224,8 @@ class PaperTrader:
             status="PENDING",
             setup_time=signal.setup_time.isoformat(),
             classification=getattr(signal, "classification", "PRO_TREND"),
+            initial_stop=signal.stop,
+            is_break_even=False,
         )
         self.positions.append(pos)
         self.save()
@@ -169,11 +249,9 @@ class PaperTrader:
                     p.filled_time = candle_time.isoformat()
                     events.append({"type": "FILLED", "position": p})
 
-            # 2. Check open position for TP or SL
+            # 2. Check open position: TP first, then Break-Even trigger, then SL
             if p.status == "OPEN":
                 hit_target = candle_high >= p.target if buying else candle_low <= p.target
-                hit_stop = candle_low <= p.stop if buying else candle_high >= p.stop
-
                 if hit_target:
                     p.status = "WIN"
                     p.realized_r = p.reward_risk
@@ -183,16 +261,37 @@ class PaperTrader:
                     p.close_reason = f"Target hit (+{p.reward_risk:.1f}R)"
                     self.balance += p.realized_pnl
                     events.append({"type": "CLOSED", "result": "WIN", "position": p})
+                    continue
 
-                elif hit_stop:
-                    p.status = "LOSS"
-                    p.realized_r = -1.0
-                    p.realized_pnl = -p.risk_usd
-                    p.close_price = p.stop
-                    p.closed_time = candle_time.isoformat()
-                    p.close_reason = "Stop loss hit (-1.0R)"
-                    self.balance += p.realized_pnl
-                    events.append({"type": "CLOSED", "result": "LOSS", "position": p})
+                # Check for +1.0R Break-Even trigger
+                init_stop = p.initial_stop if p.initial_stop is not None else p.stop
+                r_dist = abs(p.entry - init_stop)
+                if not p.is_break_even and r_dist > 0:
+                    reached_1r = (candle_high >= p.entry + r_dist) if buying else (candle_low <= p.entry - r_dist)
+                    if reached_1r:
+                        p.stop = p.entry
+                        p.is_break_even = True
+                        events.append({"type": "BREAK_EVEN", "position": p})
+
+                hit_stop = candle_low <= p.stop if buying else candle_high >= p.stop
+                if hit_stop:
+                    if p.is_break_even:
+                        p.status = "BREAK_EVEN"
+                        p.realized_r = 0.0
+                        p.realized_pnl = 0.0
+                        p.close_price = p.stop
+                        p.closed_time = candle_time.isoformat()
+                        p.close_reason = "Break-even stop triggered (+0.0R / $0.00)"
+                        events.append({"type": "CLOSED", "result": "BREAK_EVEN", "position": p})
+                    else:
+                        p.status = "LOSS"
+                        p.realized_r = -1.0
+                        p.realized_pnl = -p.risk_usd
+                        p.close_price = p.stop
+                        p.closed_time = candle_time.isoformat()
+                        p.close_reason = "Stop loss hit (-1.0R)"
+                        self.balance += p.realized_pnl
+                        events.append({"type": "CLOSED", "result": "LOSS", "position": p})
 
         if events:
             self.save()
@@ -211,9 +310,10 @@ class PaperTrader:
 
     def get_metrics(self) -> dict[str, Any]:
         """Compute comprehensive performance statistics."""
-        closed = [p for p in self.positions if p.status in ("WIN", "LOSS")]
+        closed = [p for p in self.positions if p.status in ("WIN", "LOSS", "BREAK_EVEN")]
         wins = [p for p in closed if p.status == "WIN"]
         losses = [p for p in closed if p.status == "LOSS"]
+        break_evens = [p for p in closed if p.status == "BREAK_EVEN"]
 
         total_trades = len(closed)
         win_rate = (len(wins) / total_trades * 100.0) if total_trades > 0 else 0.0
@@ -255,6 +355,7 @@ class PaperTrader:
             "total_trades": total_trades,
             "wins": len(wins),
             "losses": len(losses),
+            "break_evens": len(break_evens),
             "win_rate": win_rate,
             "profit_factor": profit_factor,
             "total_r": total_r,

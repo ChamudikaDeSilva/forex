@@ -77,6 +77,14 @@ class AutoTrader:
         digits = 2 if pair == "XAU_USD" else 5
 
         if signal.kind == "setup":
+            # Guard: Prevent duplicate positions on the same pair and timeframe
+            if self.paper_trader:
+                for p in self.paper_trader.positions:
+                    if p.pair == pair and p.timeframe == timeframe and p.status in ("PENDING", "OPEN"):
+                        if self.verbose:
+                            print(f"[{pair}] {timeframe} Setup skipped: Active position #{p.id} is already {p.status}")
+                        return
+
             order_status = "⚠️ Execution Paused"
             units_text = "N/A"
             risk_usd = 0.0
@@ -101,6 +109,8 @@ class AutoTrader:
 
                     if self.dry_run:
                         order_status = "🧪 Simulated (Dry Run - No Order Sent)"
+                    elif self.paper_trader and self.broker is self.paper_trader:
+                        order_status = "📝 Paper Limit Order Placed (Virtual)"
                     else:
                         resp = self.broker.create_limit_order(
                             pair=pair,
@@ -350,18 +360,29 @@ def run_autotrader(
                                         f"• <b>Fill Price:</b> <code>{format_price(pos.pair, pos.entry)}</code>\n"
                                         f"• <b>Target:</b> <code>{format_price(pos.pair, pos.target)}</code>\n"
                                         f"• <b>Stop:</b> <code>{format_price(pos.pair, pos.stop)}</code>\n"
-                                        f"Position is now OPEN and actively tracking TP/SL."
+                                        f"Position is now OPEN and actively tracking TP/SL (Auto BE @ +1.0R)."
                                     )
                                     trader.send_alert(fill_msg)
                                     print(f"[{pos.pair}] {pos.timeframe} PAPER ORDER FILLED @ {format_price(pos.pair, pos.entry)}")
+                                elif ev.get("type") == "BREAK_EVEN":
+                                    pos = ev["position"]
+                                    be_msg = (
+                                        f"🛡️ <b>SMC BREAK-EVEN ACTIVATED: {pos.pair} ({pos.timeframe})</b>\n"
+                                        f"━━━━━━━━━━━━━━━━━━\n"
+                                        f"• <b>Trigger:</b> Profit reached +1.0R!\n"
+                                        f"• <b>Action:</b> Stop Loss moved to Entry (<code>{format_price(pos.pair, pos.entry)}</code>)\n"
+                                        f"• <b>Status:</b> Position is now 100% <b>RISK-FREE</b>."
+                                    )
+                                    trader.send_alert(be_msg)
+                                    print(f"[{pos.pair}] {pos.timeframe} BREAK-EVEN ACTIVATED @ {format_price(pos.pair, pos.entry)}")
                                 elif ev.get("type") == "CLOSED":
                                     pos = ev["position"]
                                     res = ev["result"]
-                                    icon = "🎯" if res == "WIN" else "🛑"
+                                    icon = "🎯" if res == "WIN" else ("🛡️" if res == "BREAK_EVEN" else "🛑")
                                     msg = (
                                         f"{icon} <b>SMC PAPER TRADE RESOLVED: {pos.pair} ({pos.timeframe})</b>\n"
                                         f"━━━━━━━━━━━━━━━━━━\n"
-                                        f"• <b>Outcome:</b> <b>{res}</b>\n"
+                                        f"• <b>Outcome:</b> <b>{res.replace('_', ' ')}</b>\n"
                                         f"• <b>Realized:</b> {pos.realized_r:+.1f}R (${pos.realized_pnl:+,.2f})\n"
                                         f"• <b>Exit Price:</b> <code>{pos.close_price}</code>\n"
                                         f"• <b>Reason:</b> {pos.close_reason}\n"

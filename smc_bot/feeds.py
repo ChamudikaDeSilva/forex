@@ -308,11 +308,13 @@ class YahooFeed:
         candles: list[Candle] = []
         now = datetime.now(timezone.utc)
 
+        interval_sec = TIMEFRAMES[timeframe]
         for i in range(len(timestamps)):
             o, h, l, c = opens[i], highs[i], lows[i], closes[i]
             if None in (o, h, l, c):
                 continue
-            close_time = datetime.fromtimestamp(timestamps[i], tz=timezone.utc) + delta
+            bucket_ts = (timestamps[i] // interval_sec) * interval_sec if timeframe != "D" else timestamps[i]
+            close_time = datetime.fromtimestamp(bucket_ts, tz=timezone.utc) + delta
             if close_time > now:
                 continue
 
